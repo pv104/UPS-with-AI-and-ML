@@ -82,7 +82,15 @@ public enum ResponseEnum {
     PAYMENT_NOT_FOUND(false, 12001, HttpStatus.BAD_REQUEST.value(), "해당 결제 정보를 찾을 수 없습니다."),
 
     //Camera 오류
-    CAMERA_NOT_FOUND(false, 12000, HttpStatus.BAD_REQUEST.value(), "CCTV를 찾을 수 없습니다.");
+    CAMERA_NOT_FOUND(false, 13000, HttpStatus.BAD_REQUEST.value(), "CCTV를 찾을 수 없습니다."),
+    CAMERA_ML_SERVER_ERROR(false, 13001, HttpStatus.SERVICE_UNAVAILABLE.value(),
+            "ML 추론 서버와 통신할 수 없습니다."),
+    CAMERA_ML_RESPONSE_PARSE_ERROR(false, 13002, HttpStatus.INTERNAL_SERVER_ERROR.value(),
+            "ML 추론 응답을 파싱할 수 없습니다."),
+    CAMERA_UNKNOWN_CRIME_TYPE(false, 13003, HttpStatus.INTERNAL_SERVER_ERROR.value(),
+            "알 수 없는 범죄 유형입니다."),
+    CAMERA_VIDEO_PROCESS_ERROR(false, 13004, HttpStatus.INTERNAL_SERVER_ERROR.value(),
+            "영상 처리 중 오류가 발생했습니다.");
     private final boolean success;  //성공여부
     private final int statusCode;
     private final int httpStatus; //HTTP 상태코드
