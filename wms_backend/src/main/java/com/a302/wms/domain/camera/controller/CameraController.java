@@ -23,48 +23,33 @@ public class CameraController {
 
   @PostMapping
   public ResponseEntity<?> uploadVideo(
-      @RequestParam("file") MultipartFile file,
-      @RequestParam("userId") Long userId,
-      @RequestParam("storeId") Long storeId) {
+          @RequestParam("file") MultipartFile file,
+          @RequestParam("userId") Long userId,
+          @RequestParam("storeId") Long storeId) {
     if (file.isEmpty()) {
-      // BaseExceptionResponse 사용하여 응답
       BaseExceptionResponse errorResponse =
-          new BaseExceptionResponse(
-              false,
-              ResponseEnum.CAMERA_NOT_FOUND.getStatusCode(),
-              HttpStatus.BAD_REQUEST.value(),
-              "파일이 비었습니다");
+              new BaseExceptionResponse(
+                      false,
+                      ResponseEnum.CAMERA_NOT_FOUND.getStatusCode(),
+                      HttpStatus.BAD_REQUEST.value(),
+                      "파일이 비었습니다");
       return ResponseEntity.badRequest().body(errorResponse);
     }
-    try {
-      String processedResult = cameraServiceImpl.processVideoUpload(file, userId, storeId);
-      BaseSuccessResponse<String> successResponse = new BaseSuccessResponse<>(processedResult);
-      return ResponseEntity.ok(successResponse);
-    } catch (Exception e) {
-      log.error("Error uploading file", e);
-      BaseExceptionResponse errorResponse =
-          new BaseExceptionResponse(
-              false,
-              ResponseEnum.SERVER_ERROR.getStatusCode(),
-              HttpStatus.INTERNAL_SERVER_ERROR.value(),
-              "Error uploading file: " + e.getMessage());
-      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-    }
+    String processedResult = cameraServiceImpl.processVideoUpload(file, userId, storeId);
+    return ResponseEntity.ok(new BaseSuccessResponse<>(processedResult));
   }
 
   @GetMapping
   public ResponseEntity<?> getCameraByNotificationId(
-      @RequestParam(value = "notificationId", required = false) Long notificationId) {
-    BaseSuccessResponse<CameraResponse> successResponse =
-        new BaseSuccessResponse<>(cameraServiceImpl.findCameraByNotificationId(notificationId));
-    return ResponseEntity.ok(successResponse);
+          @RequestParam(value = "notificationId", required = false) Long notificationId) {
+    return ResponseEntity.ok(
+            new BaseSuccessResponse<>(cameraServiceImpl.findCameraByNotificationId(notificationId)));
   }
 
   @GetMapping("/batch")
   public ResponseEntity<?> getAllCameras(
-      @RequestParam(value = "storeId", required = false) Long storeId) {
-    BaseSuccessResponse<List<CameraResponse>> successResponse =
-        new BaseSuccessResponse<>(cameraServiceImpl.findAllByStoreId(storeId));
-    return ResponseEntity.ok(successResponse);
+          @RequestParam(value = "storeId", required = false) Long storeId) {
+    return ResponseEntity.ok(
+            new BaseSuccessResponse<>(cameraServiceImpl.findAllByStoreId(storeId)));
   }
 }

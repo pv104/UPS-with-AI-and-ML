@@ -2,6 +2,7 @@ package com.a302.wms.domain.camera.service;
 
 import com.a302.wms.domain.camera.dto.CameraResponse;
 import com.a302.wms.domain.camera.entity.Camera;
+import com.a302.wms.domain.camera.exception.CameraException;
 import com.a302.wms.domain.camera.mapper.CameraMapper;
 import com.a302.wms.domain.camera.repository.CameraRepository;
 import com.a302.wms.domain.camera.resource.MultipartInputStreamFileResource;
@@ -28,10 +29,11 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
 
 @Slf4j
@@ -49,128 +51,119 @@ public class CameraServiceImpl {
   @Value("${cctv-base-url}")
   private String cctvBaseUrl;
 
-  /**
-   * 비디오 업로드를 처리하고 범죄 유형을 반환하는 메서드
-   *
-   * @param file 업로드할 MultipartFile
-   * @param userId
-   * @param storeId
-   * @return 범죄 유형의 한글 값
-   * @throws Exception 업로드 또는 처리 중 발생한 예외
-   */
   @Transactional
-  public String processVideoUpload(MultipartFile file, Long userId, Long storeId) throws Exception {
-    log.info("[Service] processVideoUpload ");
-    // 비디오 업로드
-    String uploadResponse = uploadVideo(file);
+  public String processVideoUpload(MultipartFile file, Long userId, Long storeId) {
+    log.info("[Camera] processVideoUpload 시작 - userId={}, storeId={}, file={}",
+            userId, storeId, file.getOriginalFilename());
+
+    String crimeType = uploadVideo(file);
+    String crimeValue = toCrimeValue(crimeType);
+
     Notification notification =
-        Notification.builder()
-            .user(userRepository.findById(userId).orElse(null))
-            .store(storeRepository.findById(storeId).orElse(null))
-            .isImportant(false)
-            .isRead(false)
-            .notificationTypeEnum(NotificationTypeEnum.CRIME_PREVENTION)
-            .message(ProductConstant.DEFAULT_NOTIFICATION_CRIME_MESSAGE)
-            .build();
-    // 테이블 저장
+            Notification.builder()
+                    .user(userRepository.findById(userId).orElse(null))
+                    .store(storeRepository.findById(storeId).orElse(null))
+                    .isImportant(false)
+                    .isRead(false)
+                    .notificationTypeEnum(NotificationTypeEnum.CRIME_PREVENTION)
+                    .message(ProductConstant.DEFAULT_NOTIFICATION_CRIME_MESSAGE)
+                    .build();
+
     notificationServiceImpl.save(notification);
-    cameraRepository.save(
-        Camera.builder()
-            .notification(notification)
-            .title(file.getOriginalFilename())
-            .url(s3ServiceImpl.generatePresignedUrl(file.getOriginalFilename()).downloadLink())
-            .category(returnResponse(uploadResponse))
-            .build());
-    // 응답 처리
-    return returnResponse(uploadResponse);
-  }
 
-  /**
-   * 비디오 파일을 업로드하는 메서드
-   *
-   * @param file 업로드할 MultipartFile
-   * @return 업로드 응답 문자열
-   * @throws Exception 업로드 중 발생한 예외
-   */
-  public String uploadVideo(MultipartFile file) throws Exception {
-    log.info("[Service] uploadVideo by file : {}", file.getOriginalFilename());
-    WebClient client =
-        WebClient.builder()
-            .baseUrl(cctvBaseUrl)
-            .defaultHeader("Content-Type", MediaType.MULTIPART_FORM_DATA_VALUE)
-            .clientConnector(
-                new ReactorClientHttpConnector(
-                    HttpClient.create().option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 300000)))
-            .build();
-
-    MultiValueMap<String, Object> body = createBody(file);
-    log.info("[Service] body Data : {}", body.get("data"));
-    String response =
-        client
-            .post()
-            .contentType(MediaType.MULTIPART_FORM_DATA)
-            .body(BodyInserters.fromMultipartData(body))
-            .retrieve()
-            .bodyToMono(String.class)
-            .block();
-
-    if (response == null) {
-      throw new RestClientException("응답이 없습니다.");
+    try {
+      cameraRepository.save(
+              Camera.builder()
+                      .notification(notification)
+                      .title(file.getOriginalFilename())
+                      .url(s3ServiceImpl.generatePresignedUrl(file.getOriginalFilename()).downloadLink())
+                      .category(crimeValue)
+                      .build());
+    } catch (CameraException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new CameraException.VideoProcessException(
+              "Camera 엔티티 저장 실패: " + file.getOriginalFilename(), e);
     }
-    return getCrime(response);
-  }
 
-  /**
-   * 응답 문자열에서 "class" 키의 값을 추출하고 범죄 유형의 한글 값을 반환하는 메서드
-   *
-   * @param response 업로드 응답 문자열
-   * @return 범죄 유형의 한글 값
-   * @throws Exception JSON 파싱 또는 범죄 유형 매핑 중 발생한 예외
-   */
-  public String returnResponse(String response) throws Exception {
-    if (response == null) {
-      throw new IllegalArgumentException("응답이 null입니다.");
-    }
-    String crimeValue = CrimePreventionEnum.getCrimeValue(response);
-    if (crimeValue == null) {
-      throw new IllegalArgumentException("알 수 없는 범죄 유형입니다: " + response);
-    }
+    log.info("[Camera] processVideoUpload 완료 - crimeValue={}", crimeValue);
     return crimeValue;
   }
 
-  /**
-   * JSON 응답 문자열에서 "class" 키의 값을 추출하는 메서드
-   *
-   * @param response JSON 응답 문자열
-   * @return "class" 키의 값
-   * @throws Exception JSON 파싱 오류
-   */
-  public String getCrime(String response) throws Exception {
+  String uploadVideo(MultipartFile file) {
+    log.info("[Camera] uploadVideo - file={}", file.getOriginalFilename());
+    WebClient client =
+            WebClient.builder()
+                    .baseUrl(cctvBaseUrl)
+                    .defaultHeader("Content-Type", MediaType.MULTIPART_FORM_DATA_VALUE)
+                    .clientConnector(
+                            new ReactorClientHttpConnector(
+                                    HttpClient.create().option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 300000)))
+                    .build();
+
+    MultiValueMap<String, Object> body = createBody(file);
+
+    String response;
+    try {
+      response =
+              client
+                      .post()
+                      .contentType(MediaType.MULTIPART_FORM_DATA)
+                      .body(BodyInserters.fromMultipartData(body))
+                      .retrieve()
+                      .bodyToMono(String.class)
+                      .block();
+    } catch (WebClientRequestException e) {
+      throw new CameraException.MlServerException(
+              "ML 서버 연결 실패: " + cctvBaseUrl, e);
+    } catch (WebClientResponseException e) {
+      throw new CameraException.MlServerException(
+              "ML 서버 응답 오류 (HTTP " + e.getStatusCode() + ")", e);
+    }
+
+    if (response == null) {
+      throw new CameraException.MlServerException("ML 서버로부터 응답이 없습니다.");
+    }
+
+    return parseCrimeType(response);
+  }
+
+  String parseCrimeType(String response) {
     try {
       JsonNode jsonObject = objectMapper.readTree(response);
       if (jsonObject == null || !jsonObject.has("class")) {
-        throw new IllegalArgumentException("\"class\" 키가 존재하지 않습니다.");
+        throw new CameraException.MlResponseParseException(
+                "\"class\" 키가 존재하지 않습니다. response=" + response);
       }
       return jsonObject.get("class").asText();
+    } catch (CameraException e) {
+      throw e;
     } catch (Exception e) {
-      log.error("JSON 파싱 오류", e);
-      throw new Exception("JSON 파싱 오류: " + e.getMessage(), e);
+      throw new CameraException.MlResponseParseException(response, e);
     }
   }
 
-  /**
-   * 멀티파트 폼 데이터를 생성하는 메서드
-   *
-   * @param file 업로드할 MultipartFile
-   * @return 멀티파트 폼 데이터
-   * @throws IOException 파일 입력 스트림 오류
-   */
-  public MultiValueMap<String, Object> createBody(MultipartFile file) throws IOException {
+  String toCrimeValue(String crimeType) {
+    if (crimeType == null) {
+      throw new CameraException.MlResponseParseException("범죄 유형이 null 입니다.");
+    }
+    String value = CrimePreventionEnum.getCrimeValue(crimeType);
+    if (value == null) {
+      throw new CameraException.UnknownCrimeTypeException(crimeType);
+    }
+    return value;
+  }
+
+  MultiValueMap<String, Object> createBody(MultipartFile file) {
     MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-    Resource fileResource =
-        new MultipartInputStreamFileResource(file.getInputStream(), file.getOriginalFilename());
-    log.info("[Service] createBody, file length : {}", fileResource.contentLength());
-    body.add("data", fileResource);
+    try {
+      Resource fileResource =
+              new MultipartInputStreamFileResource(file.getInputStream(), file.getOriginalFilename());
+      body.add("data", fileResource);
+    } catch (IOException e) {
+      throw new CameraException.VideoProcessException(
+              "파일 스트림 생성 실패: " + file.getOriginalFilename(), e);
+    }
     return body;
   }
 
