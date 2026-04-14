@@ -1,11 +1,9 @@
 package com.a302.wms.domain.camera.controller;
 
-import com.a302.wms.domain.camera.dto.CameraResponse;
 import com.a302.wms.domain.camera.service.CameraServiceImpl;
 import com.a302.wms.global.constant.ResponseEnum;
 import com.a302.wms.global.response.BaseExceptionResponse;
 import com.a302.wms.global.response.BaseSuccessResponse;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
